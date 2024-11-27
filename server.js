@@ -28,7 +28,7 @@ const getPrices = (coins = []) => {
 
 const fetchPrices = (symbol) => {
     console.log(`Fetching prices for ${symbol}`);
-    const url = symbol ? `${BINANCE_API_URL}/ticker/price?symbol=${symbol}` : `${BINANCE_API_URL}/ticker/price`;
+    const url = symbol ? `${BINANCE_API_URL}/api/v3/ticker/price?symbol=${symbol}` : `${BINANCE_API_URL}/ticker/price`;
 
     return axios.get(url)
         .then(response => response.data)
@@ -37,24 +37,22 @@ const fetchPrices = (symbol) => {
         });
 };
 
-const placeOrder = (symbol, side, price, quantity) => {
-    const url = `${BINANCE_API_URL}/order`;
+const placeOrder = (symbol, side, price, quantity, timestamp) => {
     const params = {
         symbol: 'BTCUSDT',
         side: 'BUY', // buy or sell
         type: 'MARKET',
         quantity: 0.001,
-        timeStamp: Date.now()
+        timestamp: timestamp
     }
 
     const { query, signature } = signRequest(params, apiSecret);
 
     const requestUrl = `${BINANCE_API_URL}/api/v3/order?${query}&signature=${signature}`;
-
     const config = {
         headers: {
             'X-MBX-APIKEY': apiKey,
-            'Content-Type': 'application/x-www-form-urlencoded',  // URL-encoded data
+            'Content-Type': 'application/x-www-form-urlencoded',
         }
     };
     return axios.post(requestUrl, null, config)
@@ -86,7 +84,9 @@ server.get('/api/prices', async (req, res) => {
 server.post('/api/order', async (req, res) => {
     try {
         const { buyOrSell, symbol, price, amount } = req.body;
-        const result = await placeOrder(symbol.toUpperCase(), buyOrSell.toUpperCase(), price, amount);
+        const serverTime = await axios.get(`${BINANCE_API_URL}/api/v3/time`);
+        const timestamp = serverTime.data.serverTime;
+        const result = await placeOrder(symbol.toUpperCase(), buyOrSell.toUpperCase(), price, amount, timestamp);
         res.json(result);
     } catch (error) {
         res.status(500).json({ error: error.message });
