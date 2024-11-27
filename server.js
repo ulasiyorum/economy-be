@@ -1,14 +1,15 @@
 const express = require('express');
 const crypto = require('crypto');
+const cors = require('cors');
 const querystring = require('querystring');
 const axios = require('axios');
 const server = express();
 const PORT = 5050;
-
 const BINANCE_API_URL = process.env.BINANCE_TESTNET_URL;
 const apiKey = process.env.API_KEY;
 const apiSecret = process.env.API_SECRET;
 
+server.use(cors());
 server.use(express.json());
 axios.interceptors.response.use(
     response => response,
