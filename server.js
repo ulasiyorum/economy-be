@@ -43,7 +43,7 @@ const placeOrder = (symbol, side, price, quantity, timestamp) => {
         side: side, // buy or sell
         type: 'MARKET',
         price: price,
-        quantity: 0.001,
+        quantity: quantity,
         timestamp: timestamp
     }
 
