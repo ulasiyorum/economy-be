@@ -28,7 +28,7 @@ const getPrices = (coins = []) => {
 
 const fetchPrices = (symbol) => {
     console.log(`Fetching prices for ${symbol}`);
-    const url = symbol ? `${BINANCE_API_URL}/api/v3/ticker/price?symbol=${symbol}` : `${BINANCE_API_URL}/ticker/price`;
+    const url = symbol ? `${BINANCE_API_URL}/api/v3/ticker/price?symbol=${symbol}` : `${BINANCE_API_URL}/api/v3/ticker/price`;
 
     return axios.get(url)
         .then(response => response.data)
@@ -39,9 +39,10 @@ const fetchPrices = (symbol) => {
 
 const placeOrder = (symbol, side, price, quantity, timestamp) => {
     const params = {
-        symbol: 'BTCUSDT',
-        side: 'BUY', // buy or sell
+        symbol: symbol,
+        side: side, // buy or sell
         type: 'MARKET',
+        price: price,
         quantity: 0.001,
         timestamp: timestamp
     }
