@@ -18,13 +18,21 @@ axios.interceptors.response.use(
 
 const wss = new WebSocket.Server({ port: 5051 });
 const clientBinanceStreams = new Map();
+const clientBalances = new Map();
 
 /* When Client Connects */
 wss.on('connection', (clientWs) => {
 
     /* When connected client changes symbol/interval */
     clientWs.on('message', (message) => {
-        const { symbol, interval } = JSON.parse(message);
+
+        const { symbol, interval, balance } = JSON.parse(message);
+
+        if (balance !== undefined) {
+            clientBalances.set(clientWs, balance);
+            console.log(`Balance set for client: ${balance}`);
+            return;
+        }
 
         if (!symbol || !interval) {
             clientWs.send(JSON.stringify({ error: 'Symbol and interval are required.' }));
@@ -49,6 +57,7 @@ wss.on('connection', (clientWs) => {
             const kline = json.k;
             console.log(json)
             const candleData = {
+                type: 'candle',
                 symbol: symbol.toUpperCase(),
                 interval,
                 open: parseFloat(kline.o),
@@ -61,6 +70,8 @@ wss.on('connection', (clientWs) => {
             };
 
             clientWs.send(JSON.stringify(candleData));
+
+            simulateTrade(clientWs, candleData);
         });
 
         binanceWs.on('close', () => {
@@ -84,6 +95,48 @@ wss.on('connection', (clientWs) => {
         }
     });
 })
+
+const simulateTrade = (clientWs, candleData) => {
+    let balance = clientBalances.get(clientWs);
+
+    if(balance === undefined) return;
+
+    const action = Math.random() > 0.5 ? 'buy' : 'sell';
+
+    const price = candleData.close;
+    const quantity = (Math.random() * 10).toFixed(2);
+
+    let simulatedPrice = price;
+    if (action === 'sell') {
+        simulatedPrice = price * (1 + (Math.random() > 0.5 ? 0.01 : -0.01));
+    }
+
+    if (action === 'buy') {
+        const cost = simulatedPrice * quantity;
+        if (balance >= cost) {
+            balance -= cost;
+        } else {
+            console.log('balance not enough')
+            return;
+        }
+    } else if (action === 'sell') {
+        const earnings = simulatedPrice * quantity;
+        balance += earnings;
+    }
+    const tradeData = {
+        type: action,
+        price: simulatedPrice.toFixed(2),
+        quantity: quantity,
+        balance: balance.toFixed(2),
+        time: Date.now()
+    };
+
+    clientWs.send(JSON.stringify(tradeData));
+    clientBalances.set(clientWs, balance);
+    clientWs.send(JSON.stringify(tradeData));
+    console.log(`Simulated ${action} trade:`, tradeData);
+};
+
 
 server.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
