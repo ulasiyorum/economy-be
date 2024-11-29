@@ -1,13 +1,9 @@
 const express = require('express');
-const crypto = require('crypto');
 const cors = require('cors');
-const querystring = require('querystring');
 const axios = require('axios');
 const server = express();
 const PORT = 5050;
-const BINANCE_API_URL = process.env.BINANCE_TESTNET_URL;
-const apiKey = process.env.API_KEY;
-const apiSecret = process.env.API_SECRET;
+const BINANCE_WS_URL = process.env.BINANCE_WS_URL;
 
 server.use(cors());
 server.use(express.json());
@@ -19,80 +15,73 @@ axios.interceptors.response.use(
     }
 );
 
-const getPrices = (coins = []) => {
-    if (coins.length > 0) {
-        return Promise.all(coins.map(coin => fetchPrices(coin)));
-    }
-    return fetchPrices();
-};
+const wss = new WebSocket.Server({ port: 5051 });
+const clientBinanceStreams = new Map();
 
-const fetchPrices = (symbol) => {
-    console.log(`Fetching prices for ${symbol}`);
-    const url = symbol ? `${BINANCE_API_URL}/api/v3/ticker/price?symbol=${symbol}` : `${BINANCE_API_URL}/api/v3/ticker/price`;
+/* When Client Connects */
+wss.on('connection', (clientWs) => {
 
-    return axios.get(url)
-        .then(response => response.data)
-        .catch(error => {
-            throw new Error('Failed to fetch prices: ' + error.message);
-        });
-};
+    /* When connected client changes symbol/interval */
+    clientWs.on('message', (message) => {
+        const { symbol, interval } = JSON.parse(message);
 
-const placeOrder = (symbol, side, price, quantity, timestamp) => {
-    const params = {
-        symbol: symbol,
-        side: side, // buy or sell
-        type: 'MARKET',
-        price: price,
-        quantity: quantity,
-        timestamp: timestamp
-    }
-
-    const { query, signature } = signRequest(params, apiSecret);
-
-    const requestUrl = `${BINANCE_API_URL}/api/v3/order?${query}&signature=${signature}`;
-    const config = {
-        headers: {
-            'X-MBX-APIKEY': apiKey,
-            'Content-Type': 'application/x-www-form-urlencoded',
+        if (!symbol || !interval) {
+            clientWs.send(JSON.stringify({ error: 'Symbol and interval are required.' }));
+            return;
         }
-    };
-    return axios.post(requestUrl, null, config)
-        .then(response => response.data)
-        .catch(error => {
-            throw new Error('Failed to place order: ' + error.message);
+
+        if (clientBinanceStreams.has(clientWs)) {
+            const existingBinanceWs = clientBinanceStreams.get(clientWs);
+            console.log(`Closing previous WebSocket for ${symbol}`);
+            existingBinanceWs.close();
+        }
+
+        const streamUrl = `${BINANCE_WS_URL}${symbol.toLowerCase()}@kline_${interval}`;
+        const binanceWs = new WebSocket(streamUrl);
+
+        binanceWs.on('open', () => {
+            console.log(`Binance WebSocket started for ${symbol} (${interval})`);
         });
-};
 
-const signRequest = (params, secretKey) => {
-    const query = querystring.stringify(params);
-    const signature = crypto.createHmac('sha256', secretKey)
-        .update(query)
-        .digest('hex');
-    return { query, signature };
-};
+        binanceWs.on('message', (data) => {
+            const json = JSON.parse(data);
+            const kline = json.k;
 
-server.get('/api/prices', async (req, res) => {
-    const coins = req.query.coins ? req.query.coins.split(',') : [];
+            const candleData = {
+                symbol: symbol.toUpperCase(),
+                interval,
+                open: parseFloat(kline.o),
+                high: parseFloat(kline.h),
+                low: parseFloat(kline.l),
+                close: parseFloat(kline.c),
+                volume: parseFloat(kline.v),
+                isFinal: kline.x,
+            };
 
-    try {
-        const prices = await getPrices(coins);
-        res.json(prices);
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
+            clientWs.send(JSON.stringify(candleData));
+        });
 
-server.post('/api/order', async (req, res) => {
-    try {
-        const { buyOrSell, symbol, price, amount } = req.body;
-        const serverTime = await axios.get(`${BINANCE_API_URL}/api/v3/time`);
-        const timestamp = serverTime.data.serverTime;
-        const result = await placeOrder(symbol.toUpperCase(), buyOrSell.toUpperCase(), price, amount, timestamp);
-        res.json(result);
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
+        binanceWs.on('close', () => {
+            console.log(`Binance WebSocket for ${symbol} closed.`);
+        });
+
+        binanceWs.on('error', (error) => {
+            console.error('Binance WebSocket error:', error.message);
+        });
+
+        clientBinanceStreams.set(clientWs, binanceWs);
+    })
+
+    /* When client disconnects */
+    clientWs.on('close', () => {
+        console.log('Client disconnected');
+        if (clientBinanceStreams.has(clientWs)) {
+            const binanceWs = clientBinanceStreams.get(clientWs);
+            binanceWs.close();
+            clientBinanceStreams.delete(clientWs);
+        }
+    });
+})
 
 server.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
