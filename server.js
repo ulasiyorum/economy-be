@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
+const WebSocket = require('ws');
 const server = express();
 const PORT = 5050;
 const BINANCE_WS_URL = process.env.BINANCE_WS_URL;
