@@ -19,6 +19,7 @@ axios.interceptors.response.use(
 const wss = new WebSocket.Server({ port: 5051 });
 const clientBinanceStreams = new Map();
 const clientBalances = new Map();
+const clientInventories = new Map();
 
 /* When Client Connects */
 wss.on('connection', (clientWs) => {
@@ -30,6 +31,7 @@ wss.on('connection', (clientWs) => {
 
         if (balance !== undefined) {
             clientBalances.set(clientWs, balance);
+            clientInventories.set(clientWs, []);
             console.log(`Balance set for client: ${balance}`);
             return;
         }
@@ -98,8 +100,11 @@ wss.on('connection', (clientWs) => {
 
 const simulateTrade = (clientWs, candleData) => {
     let balance = clientBalances.get(clientWs);
+    let inventory = clientInventories.get(clientWs);
 
     if(balance === undefined) return;
+
+    if (inventory === undefined) inventory = []
 
     const action = Math.random() > 0.5 ? 'buy' : 'sell';
 
@@ -107,20 +112,41 @@ const simulateTrade = (clientWs, candleData) => {
     const quantity = (Math.random() * 10).toFixed(2);
 
     let simulatedPrice = price;
+    let profitOrLoss = 0;
+
+    const randomIndex = Math.floor(Math.random() * inventory.length);
+
     if (action === 'sell') {
-        simulatedPrice = price * (1 + (Math.random() > 0.5 ? 0.01 : -0.01));
+
+        if (inventory.length === 0 || inventory[randomIndex] === undefined) {
+            console.log('nothing to sell')
+            return;
+        }
+
+        if(inventory[randomIndex].symbol !== candleData.symbol) {
+            console.log('symbol mismatch')
+            return;
+        }
+
+        profitOrLoss = (price * quantity) - (inventory[randomIndex].boughtAt * quantity);
     }
 
     if (action === 'buy') {
         const cost = simulatedPrice * quantity;
         if (balance >= cost) {
             balance -= cost;
+            inventory.push({
+                symbol: candleData.symbol,
+                quantity: quantity,
+                boughtAt: price
+            })
         } else {
             console.log('balance not enough')
             return;
         }
     } else if (action === 'sell') {
         const earnings = simulatedPrice * quantity;
+        inventory.splice(randomIndex, 1);
         balance += earnings;
     }
     const tradeData = {
@@ -128,11 +154,12 @@ const simulateTrade = (clientWs, candleData) => {
         price: simulatedPrice.toFixed(2),
         quantity: quantity,
         balance: balance.toFixed(2),
+        profitOrLoss: profitOrLoss,
         time: Date.now()
     };
 
-    clientWs.send(JSON.stringify(tradeData));
     clientBalances.set(clientWs, balance);
+    clientInventories.set(clientWs, inventory);
     clientWs.send(JSON.stringify(tradeData));
     console.log(`Simulated ${action} trade:`, tradeData);
 };
