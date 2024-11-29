@@ -73,7 +73,11 @@ wss.on('connection', (clientWs) => {
 
             clientWs.send(JSON.stringify(candleData));
 
-            simulateTrade(clientWs, candleData);
+            const randomNumber = Math.floor(Math.random() * 100);
+
+            if (randomNumber < 10) {
+                simulateTrade(clientWs, candleData);
+            }
         });
 
         binanceWs.on('close', () => {
