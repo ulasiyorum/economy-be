@@ -255,6 +255,10 @@ const isStrategy = (clientWs, candle, historicalData) => {
         isFinal = isFinal && tradingStrategies.dmiStrategy(adx, diPlus, diMinus, clientDMI.threshold);
     }
 
+    if (!clientDMI.active || !clientRSI.active || !clientSMA.active || !clientEMA.active || !clientMACD.active || !clientSuperTrend.active || !clientBollingerBand.active) {
+        isFinal = false;
+    }
+
     return isFinal;
 }
 
