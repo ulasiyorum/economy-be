@@ -20,19 +20,112 @@ const wss = new WebSocket.Server({ port: 5051 });
 const clientBinanceStreams = new Map();
 const clientBalances = new Map();
 const clientInventories = new Map();
+const clientBollingerBands = new Map();
+const clientRSIs = new Map();
+const clientSMAs = new Map();
+const clientEMAs = new Map();
+const clientMACDs = new Map();
+const clientSuperTrends = new Map();
+const clientDMIs = new Map();
+
+function addClientStrategies(clientWs) {
+    clientBollingerBands.set(clientWs, {
+        period: 20,
+        active: false
+    });
+    clientRSIs.set(clientWs, {
+        period: 20,
+        overbought: 70,
+        oversold:30,
+        active: false
+    })
+    clientSMAs.set(clientWs, {
+        period: 20,
+        active: false
+    })
+    clientEMAs.set(clientWs, {
+        period: 20,
+        active: false,
+        smoothing: 2
+    })
+    clientMACDs.set(clientWs, {
+        shortPeriod: 12,
+        longPeriod: 26,
+        signalPeriod: 9,
+        active: false
+    })
+    clientSuperTrends.set(clientWs, {
+        period: 20,
+        active: false,
+        multiplier: 3
+    })
+    clientDMIs.set(clientWs, {
+        period: 20,
+        threshold: 25,
+        active: false
+    })
+}
 
 /* When Client Connects */
 wss.on('connection', (clientWs) => {
-
+    addClientStrategies(clientWs);
     /* When connected client changes symbol/interval */
     clientWs.on('message', (message) => {
 
-        const { symbol, interval, balance } = JSON.parse(message);
+        const { symbol, interval, balance, strategy } = JSON.parse(message);
 
         if (balance !== undefined) {
             clientBalances.set(clientWs, balance);
             clientInventories.set(clientWs, []);
             console.log(`Balance set for client: ${balance}`);
+            return;
+        }
+
+        if (strategy !== undefined) {
+            if (strategy.type === 'bollingerBands') {
+                const newStrategy = clientBollingerBands.get(clientWs);
+                newStrategy.period = strategy.period;
+                newStrategy.active = strategy.active;
+                clientBollingerBands.set(clientWs, newStrategy);
+            } else if (strategy.type === 'rsi') {
+                const newStrategy = clientRSIs.get(clientWs);
+                newStrategy.period = strategy.period;
+                newStrategy.oversold = strategy.oversold;
+                newStrategy.overbought = strategy.overbought;
+                newStrategy.active = strategy.active;
+                clientRSIs.set(clientWs, newStrategy);
+            } else if (strategy.type === 'sma') {
+                const newStrategy = clientSMAs.get(clientWs);
+                newStrategy.period = strategy.period;
+                newStrategy.active = strategy.active;
+                clientSMAs.set(clientWs, newStrategy);
+            } else if (strategy.type === 'ema') {
+                const newStrategy = clientEMAs.get(clientWs);
+                newStrategy.period = strategy.period;
+                newStrategy.smoothing = strategy.smoothing;
+                newStrategy.active = strategy.active;
+                clientEMAs.set(clientWs, newStrategy);
+            } else if (strategy.type === 'macd') {
+                const newStrategy = clientMACDs.get(clientWs);
+                newStrategy.shortPeriod = strategy.shortPeriod;
+                newStrategy.longPeriod = strategy.longPeriod;
+                newStrategy.signalPeriod = strategy.signalPeriod;
+                newStrategy.active = strategy.active;
+                clientMACDs.set(clientWs, newStrategy);
+            } else if (strategy.type === 'superTrend') {
+                const newStrategy = clientSuperTrends.get(clientWs);
+                newStrategy.period = strategy.period;
+                newStrategy.multiplier = strategy.multiplier;
+                newStrategy.active = strategy.active;
+                clientSuperTrends.set(clientWs, newStrategy);
+            } else if (strategy.type === 'dmi') {
+                const newStrategy = clientDMIs.get(clientWs);
+                newStrategy.period = strategy.period;
+                newStrategy.threshold = strategy.threshold;
+                newStrategy.active = strategy.active;
+                clientDMIs.set(clientWs, newStrategy);
+            }
+
             return;
         }
 
@@ -117,7 +210,7 @@ const simulateTrade = (clientWs, candleData) => {
 
     if(tradeData)
         clientWs.send(JSON.stringify(tradeData));
-    
+
     console.log(`Simulated trade:`, tradeData);
 };
 
