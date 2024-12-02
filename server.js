@@ -114,7 +114,10 @@ const simulateTrade = (clientWs, candleData) => {
 
     clientBalances.set(clientWs, newBalance);
     clientInventories.set(clientWs, newInventory);
-    clientWs.send(JSON.stringify(tradeData));
+
+    if(tradeData)
+        clientWs.send(JSON.stringify(tradeData));
+    
     console.log(`Simulated trade:`, tradeData);
 };
 
