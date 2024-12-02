@@ -2,6 +2,10 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const WebSocket = require('ws');
+const {tradingStrategies} = require("./strategies");
+const {calculateBollingerBands, calculateRSI, calculateSMA, calculateEMA, calculateMACD, calculateSuperTrend,
+    calculateDMI
+} = require("./strategyHelper");
 const server = express();
 const PORT = 5050;
 const BINANCE_WS_URL = process.env.BINANCE_WS_URL;
@@ -27,6 +31,8 @@ const clientEMAs = new Map();
 const clientMACDs = new Map();
 const clientSuperTrends = new Map();
 const clientDMIs = new Map();
+const clientHistoricalDatas = new Map();
+
 
 function addClientStrategies(clientWs) {
     clientBollingerBands.set(clientWs, {
@@ -70,7 +76,7 @@ function addClientStrategies(clientWs) {
 wss.on('connection', (clientWs) => {
     addClientStrategies(clientWs);
     /* When connected client changes symbol/interval */
-    clientWs.on('message', (message) => {
+    clientWs.on('message', async (message) => {
 
         const { symbol, interval, balance, strategy } = JSON.parse(message);
 
@@ -128,10 +134,15 @@ wss.on('connection', (clientWs) => {
 
             return;
         }
-
+        const clientHistoricalData = clientHistoricalDatas.get(clientWs);
         if (!symbol || !interval) {
             clientWs.send(JSON.stringify({ error: 'Symbol and interval are required.' }));
             return;
+        } else if (!clientHistoricalData
+            || clientHistoricalData.interval !== interval
+            || clientHistoricalData.symbol !== symbol) {
+            const historicalData = await fetchHistoricalData(symbol, interval, undefined, undefined)
+            clientHistoricalDatas.set(clientWs, historicalData);
         }
 
         if (clientBinanceStreams.has(clientWs)) {
@@ -165,9 +176,7 @@ wss.on('connection', (clientWs) => {
 
             clientWs.send(JSON.stringify(candleData));
 
-            const randomNumber = Math.floor(Math.random() * 100);
-
-            if (randomNumber < 10) {
+            if (isStrategy(clientWs, candleData, clientHistoricalDatas.get(clientWs))) {
                 simulateTrade(clientWs, candleData);
             }
         });
@@ -198,6 +207,56 @@ wss.on('connection', (clientWs) => {
             clientInventories.delete(clientWs);
     });
 })
+
+const isStrategy = (clientWs, candle, historicalData) => {
+    const clientBollingerBand = clientBollingerBands.get(clientWs);
+    const clientRSI = clientRSIs.get(clientWs);
+    const clientSMA = clientSMAs.get(clientWs);
+    const clientEMA = clientEMAs.get(clientWs);
+    const clientMACD = clientMACDs.get(clientWs);
+    const clientSuperTrend = clientSuperTrends.get(clientWs);
+    const clientDMI = clientDMIs.get(clientWs);
+
+    const closingPrices = historicalData.map(data => data.close)
+    let isFinal = true;
+
+    if (clientBollingerBand.active) {
+        const { lowerband, upperband } = calculateBollingerBands(closingPrices, clientBollingerBand.period);
+        isFinal = isFinal && tradingStrategies.bollingerBandsStrategy(candle, lowerband, upperband);
+    }
+
+    if (clientRSI.active) {
+        const rsi = calculateRSI(closingPrices, clientRSI.period);
+        isFinal = isFinal && tradingStrategies.rsiStrategy(rsi, clientRSI.overbought, clientRSI.oversold);
+    }
+
+    if (clientSMA.active) {
+        const sma = calculateSMA(closingPrices);
+        isFinal = isFinal && tradingStrategies.smaStrategy(candle, sma);
+    }
+
+    if (clientEMA.active) {
+        const ema = calculateEMA(closingPrices, clientEMA.period, clientEMA.smoothing);
+        isFinal = isFinal && tradingStrategies.emaStrategy(candle, ema);
+    }
+
+    if (clientMACD.active) {
+        const { macd, signal } = calculateMACD(closingPrices, clientMACD.shortPeriod, clientMACD.longPeriod, clientMACD.signalPeriod);
+        isFinal = isFinal && tradingStrategies.macdStrategy(macd, signal);
+    }
+
+    if (clientSuperTrend.active) {
+        const superTrend = calculateSuperTrend(historicalData, clientSuperTrend.period, clientSuperTrend.multiplier);
+        isFinal = isFinal && tradingStrategies.superTrendStrategy(candle, superTrend);
+    }
+
+    if (clientDMI.active) {
+        const { adx, diPlus, diMinus } = calculateDMI(historicalData, clientDMI.period);
+        isFinal = isFinal && tradingStrategies.dmiStrategy(adx, diPlus, diMinus, clientDMI.threshold);
+    }
+
+    return isFinal;
+}
 
 const simulateTrade = (clientWs, candleData) => {
     let balance = clientBalances.get(clientWs);
@@ -280,8 +339,8 @@ const fetchHistoricalData = async (symbol, interval, startTime, endTime) => {
             params: {
                 symbol: symbol.toUpperCase(),
                 interval: interval,
-                startTime,
-                endTime,
+                startTime: startTime,
+                endTime: endTime,
                 limit:1000
             }
         })
