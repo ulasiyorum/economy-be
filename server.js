@@ -210,63 +210,55 @@ wss.on('connection', (clientWs) => {
 })
 
 const isStrategy = (clientWs, candle, historicalData) => {
-    const clientBollingerBand = clientBollingerBands.get(clientWs);
-    const clientRSI = clientRSIs.get(clientWs);
-    const clientSMA = clientSMAs.get(clientWs);
-    const clientEMA = clientEMAs.get(clientWs);
-    const clientMACD = clientMACDs.get(clientWs);
-    const clientSuperTrend = clientSuperTrends.get(clientWs);
-    const clientDMI = clientDMIs.get(clientWs);
-
     const closingPrices = historicalData.map(data => data.close);
     let signals = { buy: 0, sell: 0, total: 0 };
 
-    if (clientBollingerBand.active) {
-        const { lowerband, upperband } = calculateBollingerBands(closingPrices, clientBollingerBand.period);
+    if (clientBollingerBands.get(clientWs).active) {
+        const { lowerband, upperband } = calculateBollingerBands(closingPrices, clientBollingerBands.get(clientWs).period);
         if (candle.close < lowerband) signals.buy++;
         if (candle.close > upperband) signals.sell++;
         signals.total++;
     }
 
-    if (clientRSI.active) {
-        const rsi = calculateRSI(closingPrices, clientRSI.period);
-        if (rsi < clientRSI.oversold) signals.buy++;
-        if (rsi > clientRSI.overbought) signals.sell++;
+    if (clientRSIs.get(clientWs).active) {
+        const rsi = calculateRSI(closingPrices, clientRSIs.get(clientWs).period);
+        if (rsi < clientRSIs.get(clientWs).oversold) signals.buy++;
+        if (rsi > clientRSIs.get(clientWs).overbought) signals.sell++;
         signals.total++;
     }
 
-    if (clientSMA.active) {
+    if (clientSMAs.get(clientWs).active) {
         const sma = calculateSMA(closingPrices);
         if (candle.close > sma) signals.buy++;
         if (candle.close < sma) signals.sell++;
         signals.total++;
     }
-
-    if (clientEMA.active) {
-        const ema = calculateEMA(closingPrices, clientEMA.period, clientEMA.smoothing);
+    console.log(clientEMAs.get(clientWs))
+    if (clientEMAs.get(clientWs).active && closingPrices.length >= clientEMAs.get(clientWs).period + 1) {
+        const ema = calculateEMA(closingPrices, clientEMAs.get(clientWs).period, clientEMAs.get(clientWs).smoothing);
         if (candle.close > ema) signals.buy++;
         if (candle.close < ema) signals.sell++;
         signals.total++;
     }
 
-    if (clientMACD.active) {
-        const { macd, signal } = calculateMACD(closingPrices, clientMACD.shortPeriod, clientMACD.longPeriod, clientMACD.signalPeriod);
+    if (clientMACDs.get(clientWs).active) {
+        const { macd, signal } = calculateMACD(closingPrices, clientMACDs.get(clientWs).shortPeriod, clientMACDs.get(clientWs).longPeriod, clientMACDs.get(clientWs).signalPeriod);
         if (macd > signal) signals.buy++;
         if (macd < signal) signals.sell++;
         signals.total++;
     }
 
-    if (clientSuperTrend.active) {
-        const superTrend = calculateSuperTrend(historicalData, clientSuperTrend.period, clientSuperTrend.multiplier);
+    if (clientSuperTrends.get(clientWs).active) {
+        const superTrend = calculateSuperTrend(historicalData, clientSuperTrends.get(clientWs).period, clientSuperTrends.get(clientWs).multiplier);
         if (candle.close > superTrend) signals.buy++;
         if (candle.close < superTrend) signals.sell++;
         signals.total++;
     }
 
-    if (clientDMI.active) {
-        const { adx, diPlus, diMinus } = calculateDMI(historicalData, clientDMI.period);
-        if (adx > clientDMI.threshold && diPlus > diMinus) signals.buy++;
-        if (adx > clientDMI.threshold && diMinus > diPlus) signals.sell++;
+    if (clientDMIs.get(clientWs).active) {
+        const { adx, diPlus, diMinus } = calculateDMI(historicalData, clientDMIs.get(clientWs).period);
+        if (adx > clientDMIs.get(clientWs).threshold && diPlus > diMinus) signals.buy++;
+        if (adx > clientDMIs.get(clientWs).threshold && diMinus > diPlus) signals.sell++;
         signals.total++;
     }
 
@@ -451,10 +443,9 @@ const startBacktesting = async (symbol, interval, startingBalance, startTime, en
     }
 
     const tradeDatas = [];
-    const windowSize = Math.max(200, historicalData.length * 0.1);
-    const startIndex = Math.max(windowSize, 26 + 9, 20, 14, 20);
+    const windowSize = 100;
 
-    for (let i = startIndex; i < historicalData.length; i++) {
+    for (let i = windowSize; i < historicalData.length; i++) {
         const candleData = {
             symbol: symbol,
             interval: interval,

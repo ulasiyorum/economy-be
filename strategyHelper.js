@@ -40,7 +40,7 @@ export function calculateBollingerBands(closingPrices, period) {
 
 export function calculateEMA(closingPrices, period, smoothing = 2) {
     if (closingPrices.length < period + 1) {
-        throw new Error('Not enough data to calculate EMA');
+        return 0;
     }
 
     const initialSMA = closingPrices.slice(0, period)
