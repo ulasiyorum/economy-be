@@ -176,7 +176,8 @@ wss.on('connection', (clientWs) => {
 
             clientWs.send(JSON.stringify(candleData));
 
-            if (isStrategy(clientWs, candleData, clientHistoricalDatas.get(clientWs))) {
+            //if (isStrategy(clientWs, candleData, clientHistoricalDatas.get(clientWs))) { <= Stratejiler kontrol edilecek
+            if (Math.random() * 100 <= 25) {
                 simulateTrade(clientWs, candleData);
             }
         });
