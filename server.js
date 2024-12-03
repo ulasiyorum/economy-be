@@ -86,7 +86,7 @@ wss.on('connection', (clientWs) => {
             console.log(`Balance set for client: ${balance}`);
             return;
         }
-
+        console.log(strategy)
         if (strategy !== undefined) {
             if (strategy.type === 'bollingerBands') {
                 const newStrategy = clientBollingerBands.get(clientWs);
@@ -176,9 +176,9 @@ wss.on('connection', (clientWs) => {
 
             clientWs.send(JSON.stringify(candleData));
 
-            //if (isStrategy(clientWs, candleData, clientHistoricalDatas.get(clientWs))) { <= Stratejiler kontrol edilecek
-            if (Math.random() * 100 <= 25) {
-                simulateTrade(clientWs, candleData);
+            const simulatedStrategy = isStrategy(clientWs, candleData, clientHistoricalDatas.get(clientWs));
+            if (simulatedStrategy.shouldTrade) {
+                simulateTrade(clientWs, candleData, simulatedStrategy.action);
             }
         });
 
@@ -218,56 +218,77 @@ const isStrategy = (clientWs, candle, historicalData) => {
     const clientSuperTrend = clientSuperTrends.get(clientWs);
     const clientDMI = clientDMIs.get(clientWs);
 
-    const closingPrices = historicalData.map(data => data.close)
-    let isFinal = true;
+    const closingPrices = historicalData.map(data => data.close);
+    let signals = { buy: 0, sell: 0, total: 0 };
 
     if (clientBollingerBand.active) {
         const { lowerband, upperband } = calculateBollingerBands(closingPrices, clientBollingerBand.period);
-        isFinal = isFinal && tradingStrategies.bollingerBandsStrategy(candle, lowerband, upperband);
+        if (candle.close < lowerband) signals.buy++;
+        if (candle.close > upperband) signals.sell++;
+        signals.total++;
     }
 
     if (clientRSI.active) {
         const rsi = calculateRSI(closingPrices, clientRSI.period);
-        isFinal = isFinal && tradingStrategies.rsiStrategy(rsi, clientRSI.overbought, clientRSI.oversold);
+        if (rsi < clientRSI.oversold) signals.buy++;
+        if (rsi > clientRSI.overbought) signals.sell++;
+        signals.total++;
     }
 
     if (clientSMA.active) {
         const sma = calculateSMA(closingPrices);
-        isFinal = isFinal && tradingStrategies.smaStrategy(candle, sma);
+        if (candle.close > sma) signals.buy++;
+        if (candle.close < sma) signals.sell++;
+        signals.total++;
     }
 
     if (clientEMA.active) {
         const ema = calculateEMA(closingPrices, clientEMA.period, clientEMA.smoothing);
-        isFinal = isFinal && tradingStrategies.emaStrategy(candle, ema);
+        if (candle.close > ema) signals.buy++;
+        if (candle.close < ema) signals.sell++;
+        signals.total++;
     }
 
     if (clientMACD.active) {
         const { macd, signal } = calculateMACD(closingPrices, clientMACD.shortPeriod, clientMACD.longPeriod, clientMACD.signalPeriod);
-        isFinal = isFinal && tradingStrategies.macdStrategy(macd, signal);
+        if (macd > signal) signals.buy++;
+        if (macd < signal) signals.sell++;
+        signals.total++;
     }
 
     if (clientSuperTrend.active) {
         const superTrend = calculateSuperTrend(historicalData, clientSuperTrend.period, clientSuperTrend.multiplier);
-        isFinal = isFinal && tradingStrategies.superTrendStrategy(candle, superTrend);
+        if (candle.close > superTrend) signals.buy++;
+        if (candle.close < superTrend) signals.sell++;
+        signals.total++;
     }
 
     if (clientDMI.active) {
         const { adx, diPlus, diMinus } = calculateDMI(historicalData, clientDMI.period);
-        isFinal = isFinal && tradingStrategies.dmiStrategy(adx, diPlus, diMinus, clientDMI.threshold);
+        if (adx > clientDMI.threshold && diPlus > diMinus) signals.buy++;
+        if (adx > clientDMI.threshold && diMinus > diPlus) signals.sell++;
+        signals.total++;
     }
 
-    if (!clientDMI.active || !clientRSI.active || !clientSMA.active || !clientEMA.active || !clientMACD.active || !clientSuperTrend.active || !clientBollingerBand.active) {
-        isFinal = false;
+    if (signals.total > 0) {
+        const buyPercentage = (signals.buy / signals.total) * 100;
+        const sellPercentage = (signals.sell / signals.total) * 100;
+
+        return {
+            shouldTrade: buyPercentage > 60 || sellPercentage > 60,
+            action: buyPercentage > sellPercentage ? 'buy' : 'sell'
+        };
     }
 
-    return isFinal;
-}
+    return { shouldTrade: false };
+};
 
-const simulateTrade = (clientWs, candleData) => {
+const simulateTrade = (clientWs, candleData, action) => {
     let balance = clientBalances.get(clientWs);
     let inventory = clientInventories.get(clientWs);
 
-    const { tradeData: tradeData, inventory: newInventory, balance: newBalance } = trade(inventory, balance, candleData);
+    const { tradeData, inventory: newInventory, balance: newBalance } = 
+        trade(inventory, balance, candleData, action);
 
     clientBalances.set(clientWs, newBalance);
     clientInventories.set(clientWs, newInventory);
@@ -278,15 +299,12 @@ const simulateTrade = (clientWs, candleData) => {
     console.log(`Simulated trade:`, tradeData);
 };
 
-const trade = (inventory, balance, candleData) => {
+const trade = (inventory, balance, candleData, action) => {
     if(balance === undefined) return { inventory, balance };
-
-    if (inventory === undefined) inventory = []
-
-    const action = Math.random() > 0.5 ? 'buy' : 'sell';
+    if (inventory === undefined) inventory = [];
 
     const price = candleData.close;
-    const quantity = (Math.random() * 1000 / price);
+    const quantity = (balance * 0.1) / price;
 
     let simulatedPrice = price;
     let profitOrLoss = 0;
@@ -365,20 +383,98 @@ const fetchHistoricalData = async (symbol, interval, startTime, endTime) => {
     }
 }
 
-const startBacktesting = async (symbol, interval, startingBalance, startTime, endTime) => {
+const startBacktesting = async (symbol, interval, startingBalance, startTime, endTime, strategyTypes = []) => {
     let inventory = [];
     let balance = startingBalance;
 
+    const mockClientWs = {};
+    addClientStrategies(mockClientWs);
+    
+    strategyTypes.forEach(type => {
+        switch(type) {
+            case 'bollingerBands':
+                clientBollingerBands.set(mockClientWs, {
+                    period: 20,
+                    active: true
+                });
+                break;
+            case 'rsi':
+                clientRSIs.set(mockClientWs, {
+                    period: 14,
+                    oversold: 30,
+                    overbought: 70,
+                    active: true
+                });
+                break;
+            case 'sma':
+                clientSMAs.set(mockClientWs, {
+                    period: 20,
+                    active: true
+                });
+                break;
+            case 'ema':
+                clientEMAs.set(mockClientWs, {
+                    period: 20,
+                    smoothing: 2,
+                    active: true
+                });
+                break;
+            case 'macd':
+                clientMACDs.set(mockClientWs, {
+                    shortPeriod: 12,
+                    longPeriod: 26,
+                    signalPeriod: 9,
+                    active: true
+                });
+                break;
+            case 'superTrend':
+                clientSuperTrends.set(mockClientWs, {
+                    period: 20,
+                    multiplier: 3,
+                    active: true
+                });
+                break;
+            case 'dmi':
+                clientDMIs.set(mockClientWs, {
+                    period: 14,
+                    threshold: 25,
+                    active: true
+                });
+                break;
+        }
+    });
+
     const historicalData = await fetchHistoricalData(symbol, interval, startTime, endTime);
     if(!historicalData || historicalData.length === 0) {
-        console.log('NO HISTORICAL DATA')
+        console.log('NO HISTORICAL DATA');
         return;
     }
+
     const tradeDatas = [];
-    for (let candleData of historicalData) {
-        const tradeDecision = Math.random() < 0.1;
-        if (tradeDecision) {
-            const { inventory: newInventory, balance: newBalance, tradeData: tradeData  } = trade(inventory, balance, candleData);
+    const windowSize = Math.max(200, historicalData.length * 0.1);
+    const startIndex = Math.max(windowSize, 26 + 9, 20, 14, 20);
+
+    for (let i = startIndex; i < historicalData.length; i++) {
+        const candleData = {
+            symbol: symbol,
+            interval: interval,
+            close: historicalData[i].close,
+            high: historicalData[i].high,
+            low: historicalData[i].low,
+            open: historicalData[i].open,
+            volume: historicalData[i].volume,
+            time: historicalData[i].openTime,
+            isFinal: true
+        };
+
+        const historicalWindow = historicalData.slice(i - windowSize, i);
+        
+        const strategyResult = isStrategy(mockClientWs, candleData, historicalWindow);
+        
+        if (strategyResult.shouldTrade) {
+            const { inventory: newInventory, balance: newBalance, tradeData } = 
+                trade(inventory, balance, candleData, strategyResult.action);
+            
             if (tradeData) {
                 tradeDatas.push(tradeData);
                 inventory = newInventory;
@@ -391,15 +487,23 @@ const startBacktesting = async (symbol, interval, startingBalance, startTime, en
 }
 
 server.post('/api/simulate-backtesting', async (req, res) => {
-    const { symbol, interval, balance, startTime, endTime } = req.body;
+    const { symbol, interval, balance, startTime, endTime, strategyTypes } = req.body;
+    
     try {
-        const response = await startBacktesting(symbol, interval, balance, startTime, endTime);
+        const response = await startBacktesting(
+            symbol, 
+            interval, 
+            balance, 
+            startTime, 
+            endTime, 
+            strategyTypes.map(data => data.toLowerCase()) || []
+        );
         res.json(response);
     } catch(error) {
         console.log('BackTesting Error: ' + error.message);
         res.status(500).send('Internal Server Error');
     }
-})
+});
 
 server.get('/api/historical-data', async (req, res) => {
     const { symbol, interval, startTime, endTime } = req.query;
