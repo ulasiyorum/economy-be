@@ -242,6 +242,7 @@ wss.on('connection', (clientWs, req) => {
                 binanceWs.close();
                 clientBinanceStreams.delete(clientIp);
             }
+            /*
             clientBalances.delete(clientIp);
             clientInventories.delete(clientIp);
             clientBollingerBands.delete(clientIp);
@@ -252,6 +253,7 @@ wss.on('connection', (clientWs, req) => {
             clientSuperTrends.delete(clientIp);
             clientDMIs.delete(clientIp);
             clientHistoricalDatas.delete(clientIp);
+            */
         }
     });
 })
