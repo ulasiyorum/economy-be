@@ -32,40 +32,41 @@ const clientMACDs = new Map();
 const clientSuperTrends = new Map();
 const clientDMIs = new Map();
 const clientHistoricalDatas = new Map();
+const activeClients = new Map();
 
 
-function addClientStrategies(clientWs) {
-    clientBollingerBands.set(clientWs, {
+function addClientStrategies(clientIp) {
+    clientBollingerBands.set(clientIp, {
         period: 20,
         active: false
     });
-    clientRSIs.set(clientWs, {
+    clientRSIs.set(clientIp, {
         period: 20,
         overbought: 70,
         oversold:30,
         active: false
     })
-    clientSMAs.set(clientWs, {
+    clientSMAs.set(clientIp, {
         period: 20,
         active: false
     })
-    clientEMAs.set(clientWs, {
+    clientEMAs.set(clientIp, {
         period: 20,
         active: false,
         smoothing: 2
     })
-    clientMACDs.set(clientWs, {
+    clientMACDs.set(clientIp, {
         shortPeriod: 12,
         longPeriod: 26,
         signalPeriod: 9,
         active: false
     })
-    clientSuperTrends.set(clientWs, {
+    clientSuperTrends.set(clientIp, {
         period: 20,
         active: false,
         multiplier: 3
     })
-    clientDMIs.set(clientWs, {
+    clientDMIs.set(clientIp, {
         period: 20,
         threshold: 25,
         active: false
@@ -73,68 +74,101 @@ function addClientStrategies(clientWs) {
 }
 
 /* When Client Connects */
-wss.on('connection', (clientWs) => {
-    addClientStrategies(clientWs);
-    /* When connected client changes symbol/interval */
-    clientWs.on('message', async (message) => {
+wss.on('connection', (clientWs, req) => {
+    const clientIp = req.socket.remoteAddress;
+    clientWs.ip = clientIp;
 
+    if (!activeClients.has(clientIp)) {
+        activeClients.set(clientIp, []);
+        addClientStrategies(clientIp);
+    }
+
+    activeClients.get(clientIp).push(clientWs);
+    console.log(`New client connected from IP: ${clientIp}. Total clients for this IP: ${activeClients.get(clientIp).length}`);
+
+    clientWs.on('message', async (message) => {
         const { symbol, interval, balance, strategy } = JSON.parse(message);
 
         if (balance !== undefined) {
-            clientBalances.set(clientWs, balance);
-            clientInventories.set(clientWs, []);
-            console.log(`Balance set for client: ${balance}`);
-            return;
+            if (!clientBalances.has(clientIp)) {
+                clientBalances.set(clientIp, balance);
+                clientInventories.set(clientIp, []);
+                console.log(`Balance set for client IP: ${clientIp}`);
+            }
         }
-        console.log(strategy)
+
         if (strategy !== undefined) {
+            if (!clientBollingerBands.has(clientIp) || 
+                !clientRSIs.has(clientIp) || 
+                !clientSMAs.has(clientIp) || 
+                !clientEMAs.has(clientIp) || 
+                !clientMACDs.has(clientIp) || 
+                !clientSuperTrends.has(clientIp) || 
+                !clientDMIs.has(clientIp)) {
+                addClientStrategies(clientIp);
+            }
+
             if (strategy.type === 'bollingerBands') {
-                const newStrategy = clientBollingerBands.get(clientWs);
-                newStrategy.period = strategy.period;
-                newStrategy.active = strategy.active;
-                clientBollingerBands.set(clientWs, newStrategy);
+                const newStrategy = clientBollingerBands.get(clientIp);
+                if (newStrategy) {
+                    newStrategy.period = strategy.period;
+                    newStrategy.active = strategy.active;
+                    clientBollingerBands.set(clientIp, newStrategy);
+                }
             } else if (strategy.type === 'rsi') {
-                const newStrategy = clientRSIs.get(clientWs);
-                newStrategy.period = strategy.period;
-                newStrategy.oversold = strategy.oversold;
-                newStrategy.overbought = strategy.overbought;
-                newStrategy.active = strategy.active;
-                clientRSIs.set(clientWs, newStrategy);
+                const newStrategy = clientRSIs.get(clientIp);
+                if (newStrategy) {
+                    newStrategy.period = strategy.period;
+                    newStrategy.oversold = strategy.oversold;
+                    newStrategy.overbought = strategy.overbought;
+                    newStrategy.active = strategy.active;
+                    clientRSIs.set(clientIp, newStrategy);
+                }
             } else if (strategy.type === 'sma') {
-                const newStrategy = clientSMAs.get(clientWs);
-                newStrategy.period = strategy.period;
-                newStrategy.active = strategy.active;
-                clientSMAs.set(clientWs, newStrategy);
+                const newStrategy = clientSMAs.get(clientIp);
+                if (newStrategy) {
+                    newStrategy.period = strategy.period;
+                    newStrategy.active = strategy.active;
+                    clientSMAs.set(clientIp, newStrategy);
+                }
             } else if (strategy.type === 'ema') {
-                const newStrategy = clientEMAs.get(clientWs);
-                newStrategy.period = strategy.period;
-                newStrategy.smoothing = strategy.smoothing;
-                newStrategy.active = strategy.active;
-                clientEMAs.set(clientWs, newStrategy);
+                const newStrategy = clientEMAs.get(clientIp);
+                if (newStrategy) {
+                    newStrategy.period = strategy.period;
+                    newStrategy.smoothing = strategy.smoothing;
+                    newStrategy.active = strategy.active;
+                    clientEMAs.set(clientIp, newStrategy);
+                }
             } else if (strategy.type === 'macd') {
-                const newStrategy = clientMACDs.get(clientWs);
-                newStrategy.shortPeriod = strategy.shortPeriod;
-                newStrategy.longPeriod = strategy.longPeriod;
-                newStrategy.signalPeriod = strategy.signalPeriod;
-                newStrategy.active = strategy.active;
-                clientMACDs.set(clientWs, newStrategy);
+                const newStrategy = clientMACDs.get(clientIp);
+                if (newStrategy) {
+                    newStrategy.shortPeriod = strategy.shortPeriod;
+                    newStrategy.longPeriod = strategy.longPeriod;
+                    newStrategy.signalPeriod = strategy.signalPeriod;
+                    newStrategy.active = strategy.active;
+                    clientMACDs.set(clientIp, newStrategy);
+                }
             } else if (strategy.type === 'superTrend') {
-                const newStrategy = clientSuperTrends.get(clientWs);
-                newStrategy.period = strategy.period;
-                newStrategy.multiplier = strategy.multiplier;
-                newStrategy.active = strategy.active;
-                clientSuperTrends.set(clientWs, newStrategy);
+                const newStrategy = clientSuperTrends.get(clientIp);
+                if (newStrategy) {
+                    newStrategy.period = strategy.period;
+                    newStrategy.multiplier = strategy.multiplier;
+                    newStrategy.active = strategy.active;
+                    clientSuperTrends.set(clientIp, newStrategy);
+                }
             } else if (strategy.type === 'dmi') {
-                const newStrategy = clientDMIs.get(clientWs);
-                newStrategy.period = strategy.period;
-                newStrategy.threshold = strategy.threshold;
-                newStrategy.active = strategy.active;
-                clientDMIs.set(clientWs, newStrategy);
+                const newStrategy = clientDMIs.get(clientIp);
+                if (newStrategy) {
+                    newStrategy.period = strategy.period;
+                    newStrategy.threshold = strategy.threshold;
+                    newStrategy.active = strategy.active;
+                    clientDMIs.set(clientIp, newStrategy);
+                }
             }
 
             return;
         }
-        const clientHistoricalData = clientHistoricalDatas.get(clientWs);
+        const clientHistoricalData = clientHistoricalDatas.get(clientIp);
         if (!symbol || !interval) {
             clientWs.send(JSON.stringify({ error: 'Symbol and interval are required.' }));
             return;
@@ -142,11 +176,11 @@ wss.on('connection', (clientWs) => {
             || clientHistoricalData.interval !== interval
             || clientHistoricalData.symbol !== symbol) {
             const historicalData = await fetchHistoricalData(symbol, interval, undefined, undefined)
-            clientHistoricalDatas.set(clientWs, historicalData);
+            clientHistoricalDatas.set(clientIp, historicalData);
         }
 
-        if (clientBinanceStreams.has(clientWs)) {
-            const existingBinanceWs = clientBinanceStreams.get(clientWs);
+        if (clientBinanceStreams.has(clientIp)) {
+            const existingBinanceWs = clientBinanceStreams.get(clientIp);
             console.log(`Closing previous WebSocket for ${symbol}`);
             existingBinanceWs.close();
         }
@@ -176,9 +210,9 @@ wss.on('connection', (clientWs) => {
 
             clientWs.send(JSON.stringify(candleData));
 
-            const simulatedStrategy = isStrategy(clientWs, candleData, clientHistoricalDatas.get(clientWs));
+            const simulatedStrategy = isStrategy(clientIp, candleData, clientHistoricalDatas.get(clientIp));
             if (simulatedStrategy.shouldTrade) {
-                simulateTrade(clientWs, candleData, simulatedStrategy.action);
+                simulateTrade(clientIp, candleData, simulatedStrategy.action);
             }
         });
 
@@ -190,75 +224,88 @@ wss.on('connection', (clientWs) => {
             console.error('Binance WebSocket error:', error.message);
         });
 
-        clientBinanceStreams.set(clientWs, binanceWs);
+        clientBinanceStreams.set(clientIp, binanceWs);
     })
 
-    /* When client disconnects */
     clientWs.on('close', () => {
-        console.log('Client disconnected');
-        if (clientBinanceStreams.has(clientWs)) {
-            const binanceWs = clientBinanceStreams.get(clientWs);
-            binanceWs.close();
-            clientBinanceStreams.delete(clientWs);
+        const clients = activeClients.get(clientIp);
+        const index = clients.indexOf(clientWs);
+        if (index > -1) {
+            clients.splice(index, 1);
         }
-        if(clientBalances.has(clientWs))
-            clientBalances.delete(clientWs);
 
-        if(clientInventories.has(clientWs))
-            clientInventories.delete(clientWs);
+        if (clients.length === 0) {
+            console.log(`Last client disconnected from IP: ${clientIp}`);
+            activeClients.delete(clientIp);
+            if (clientBinanceStreams.has(clientIp)) {
+                const binanceWs = clientBinanceStreams.get(clientIp);
+                binanceWs.close();
+                clientBinanceStreams.delete(clientIp);
+            }
+            clientBalances.delete(clientIp);
+            clientInventories.delete(clientIp);
+            clientBollingerBands.delete(clientIp);
+            clientRSIs.delete(clientIp);
+            clientSMAs.delete(clientIp);
+            clientEMAs.delete(clientIp);
+            clientMACDs.delete(clientIp);
+            clientSuperTrends.delete(clientIp);
+            clientDMIs.delete(clientIp);
+            clientHistoricalDatas.delete(clientIp);
+        }
     });
 })
 
-const isStrategy = (clientWs, candle, historicalData) => {
+const isStrategy = (clientIp, candle, historicalData) => {
     const closingPrices = historicalData.map(data => data.close);
     let signals = { buy: 0, sell: 0, total: 0 };
 
-    if (clientBollingerBands.get(clientWs).active) {
-        const { lowerband, upperband } = calculateBollingerBands(closingPrices, clientBollingerBands.get(clientWs).period);
+    if (clientBollingerBands.get(clientIp).active) {
+        const { lowerband, upperband } = calculateBollingerBands(closingPrices, clientBollingerBands.get(clientIp).period);
         if (candle.close < lowerband) signals.buy++;
         if (candle.close > upperband) signals.sell++;
         signals.total++;
     }
 
-    if (clientRSIs.get(clientWs).active) {
-        const rsi = calculateRSI(closingPrices, clientRSIs.get(clientWs).period);
-        if (rsi < clientRSIs.get(clientWs).oversold) signals.buy++;
-        if (rsi > clientRSIs.get(clientWs).overbought) signals.sell++;
+    if (clientRSIs.get(clientIp).active) {
+        const rsi = calculateRSI(closingPrices, clientRSIs.get(clientIp).period);
+        if (rsi < clientRSIs.get(clientIp).oversold) signals.buy++;
+        if (rsi > clientRSIs.get(clientIp).overbought) signals.sell++;
         signals.total++;
     }
 
-    if (clientSMAs.get(clientWs).active) {
+    if (clientSMAs.get(clientIp).active) {
         const sma = calculateSMA(closingPrices);
         if (candle.close > sma) signals.buy++;
         if (candle.close < sma) signals.sell++;
         signals.total++;
     }
-    console.log(clientEMAs.get(clientWs))
-    if (clientEMAs.get(clientWs).active && closingPrices.length >= clientEMAs.get(clientWs).period + 1) {
-        const ema = calculateEMA(closingPrices, clientEMAs.get(clientWs).period, clientEMAs.get(clientWs).smoothing);
+    console.log(clientEMAs.get(clientIp))
+    if (clientEMAs.get(clientIp).active && closingPrices.length >= clientEMAs.get(clientIp).period + 1) {
+        const ema = calculateEMA(closingPrices, clientEMAs.get(clientIp).period, clientEMAs.get(clientIp).smoothing);
         if (candle.close > ema) signals.buy++;
         if (candle.close < ema) signals.sell++;
         signals.total++;
     }
 
-    if (clientMACDs.get(clientWs).active) {
-        const { macd, signal } = calculateMACD(closingPrices, clientMACDs.get(clientWs).shortPeriod, clientMACDs.get(clientWs).longPeriod, clientMACDs.get(clientWs).signalPeriod);
+    if (clientMACDs.get(clientIp).active) {
+        const { macd, signal } = calculateMACD(closingPrices, clientMACDs.get(clientIp).shortPeriod, clientMACDs.get(clientIp).longPeriod, clientMACDs.get(clientIp).signalPeriod);
         if (macd > signal) signals.buy++;
         if (macd < signal) signals.sell++;
         signals.total++;
     }
 
-    if (clientSuperTrends.get(clientWs).active) {
-        const superTrend = calculateSuperTrend(historicalData, clientSuperTrends.get(clientWs).period, clientSuperTrends.get(clientWs).multiplier);
+    if (clientSuperTrends.get(clientIp).active) {
+        const superTrend = calculateSuperTrend(historicalData, clientSuperTrends.get(clientIp).period, clientSuperTrends.get(clientIp).multiplier);
         if (candle.close > superTrend) signals.buy++;
         if (candle.close < superTrend) signals.sell++;
         signals.total++;
     }
 
-    if (clientDMIs.get(clientWs).active) {
-        const { adx, diPlus, diMinus } = calculateDMI(historicalData, clientDMIs.get(clientWs).period);
-        if (adx > clientDMIs.get(clientWs).threshold && diPlus > diMinus) signals.buy++;
-        if (adx > clientDMIs.get(clientWs).threshold && diMinus > diPlus) signals.sell++;
+    if (clientDMIs.get(clientIp).active) {
+        const { adx, diPlus, diMinus } = calculateDMI(historicalData, clientDMIs.get(clientIp).period);
+        if (adx > clientDMIs.get(clientIp).threshold && diPlus > diMinus) signals.buy++;
+        if (adx > clientDMIs.get(clientIp).threshold && diMinus > diPlus) signals.sell++;
         signals.total++;
     }
 
@@ -275,20 +322,32 @@ const isStrategy = (clientWs, candle, historicalData) => {
     return { shouldTrade: false };
 };
 
-const simulateTrade = (clientWs, candleData, action) => {
-    let balance = clientBalances.get(clientWs);
-    let inventory = clientInventories.get(clientWs);
+const simulateTrade = (clientIp, candleData, action) => {
+    let balance = clientBalances.get(clientIp);
+    let inventory = clientInventories.get(clientIp);
+
+    if (!balance || !inventory) {
+        console.log(`No balance or inventory found for IP: ${clientIp}`);
+        return;
+    }
 
     const { tradeData, inventory: newInventory, balance: newBalance } = 
         trade(inventory, balance, candleData, action);
 
-    clientBalances.set(clientWs, newBalance);
-    clientInventories.set(clientWs, newInventory);
+    if (tradeData) {
+        clientBalances.set(clientIp, newBalance);
+        clientInventories.set(clientIp, newInventory);
 
-    if(tradeData)
-        clientWs.send(JSON.stringify(tradeData));
-
-    console.log(`Simulated trade:`, tradeData);
+        const clients = activeClients.get(clientIp);
+        if (clients) {
+            clients.forEach(client => {
+                if (client.readyState === WebSocket.OPEN) {
+                    client.send(JSON.stringify(tradeData));
+                }
+            });
+        }
+        console.log(`Simulated trade for IP ${clientIp}:`, tradeData);
+    }
 };
 
 const trade = (inventory, balance, candleData, action) => {
